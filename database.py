@@ -4,7 +4,7 @@ import os
 
 class Database:
     def __init__(self):
-        # Use a persistent database file in the app directory
+        # Use a persistent database file
         db_path = os.path.join(os.path.dirname(__file__), 'users.db')
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
@@ -53,7 +53,6 @@ class Database:
                     (user_id, username, first_name)
                 )
                 self.conn.commit()
-                # Add initial welcome bonus
                 self.add_transaction(user_id, 'BONUS', 100, 'Welcome bonus 100 tokens')
                 return True
             return False
@@ -68,18 +67,6 @@ class Database:
         except Exception as e:
             print(f"Error getting user: {e}")
             return None
-    
-    def update_balance(self, user_id, amount):
-        try:
-            self.cursor.execute(
-                'UPDATE users SET balance = balance + ? WHERE user_id = ?',
-                (amount, user_id)
-            )
-            self.conn.commit()
-            return True
-        except Exception as e:
-            print(f"Error updating balance: {e}")
-            return False
     
     def stake_tokens(self, user_id, amount):
         try:
