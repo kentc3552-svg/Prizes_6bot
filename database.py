@@ -1,10 +1,10 @@
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 
 class Database:
     def __init__(self):
-        # Use a persistent database file
+        # Use a persistent database file in the app directory
         db_path = os.path.join(os.path.dirname(__file__), 'users.db')
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
@@ -42,59 +42,82 @@ class Database:
         self.conn.commit()
     
     def register_user(self, user_id, username, first_name):
-        self.cursor.execute(
-            'SELECT user_id FROM users WHERE user_id = ?',
-            (user_id,)
-        )
-        if not self.cursor.fetchone():
+        try:
             self.cursor.execute(
-                'INSERT INTO users (user_id, username, first_name) VALUES (?, ?, ?)',
-                (user_id, username, first_name)
+                'SELECT user_id FROM users WHERE user_id = ?',
+                (user_id,)
             )
-            self.conn.commit()
-            return True
-        return False
+            if not self.cursor.fetchone():
+                self.cursor.execute(
+                    'INSERT INTO users (user_id, username, first_name, balance) VALUES (?, ?, ?, 100)',
+                    (user_id, username, first_name)
+                )
+                self.conn.commit()
+                # Add initial welcome bonus
+                self.add_transaction(user_id, 'BONUS', 100, 'Welcome bonus 100 tokens')
+                return True
+            return False
+        except Exception as e:
+            print(f"Error registering user: {e}")
+            return False
     
     def get_user(self, user_id):
-        self.cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-        return self.cursor.fetchone()
+        try:
+            self.cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+            return self.cursor.fetchone()
+        except Exception as e:
+            print(f"Error getting user: {e}")
+            return None
     
     def update_balance(self, user_id, amount):
-        self.cursor.execute(
-            'UPDATE users SET balance = balance + ? WHERE user_id = ?',
-            (amount, user_id)
-        )
-        self.conn.commit()
-    
-    def stake_tokens(self, user_id, amount):
-        user = self.get_user(user_id)
-        if user and user[3] >= amount:
+        try:
             self.cursor.execute(
-                'UPDATE users SET balance = balance - ?, staked_amount = staked_amount + ?, staked_time = ? WHERE user_id = ?',
-                (amount, amount, datetime.now().isoformat(), user_id)
-            )
-            self.conn.commit()
-            self.add_transaction(user_id, 'STAKE', amount, f'Staked {amount} tokens')
-            return True
-        return False
-    
-    def unstake_tokens(self, user_id):
-        user = self.get_user(user_id)
-        if user and user[4] > 0:
-            amount = user[4]
-            self.cursor.execute(
-                'UPDATE users SET balance = balance + ?, staked_amount = 0, staked_time = NULL WHERE user_id = ?',
+                'UPDATE users SET balance = balance + ? WHERE user_id = ?',
                 (amount, user_id)
             )
             self.conn.commit()
-            self.add_transaction(user_id, 'UNSTAKE', amount, f'Unstaked {amount} tokens')
             return True
-        return False
+        except Exception as e:
+            print(f"Error updating balance: {e}")
+            return False
+    
+    def stake_tokens(self, user_id, amount):
+        try:
+            user = self.get_user(user_id)
+            if user and user[3] >= amount:
+                self.cursor.execute(
+                    'UPDATE users SET balance = balance - ?, staked_amount = staked_amount + ?, staked_time = ? WHERE user_id = ?',
+                    (amount, amount, datetime.now().isoformat(), user_id)
+                )
+                self.conn.commit()
+                self.add_transaction(user_id, 'STAKE', amount, f'Staked {amount} tokens')
+                return True
+            return False
+        except Exception as e:
+            print(f"Error staking tokens: {e}")
+            return False
+    
+    def unstake_tokens(self, user_id):
+        try:
+            user = self.get_user(user_id)
+            if user and user[4] > 0:
+                amount = user[4]
+                self.cursor.execute(
+                    'UPDATE users SET balance = balance + ?, staked_amount = 0, staked_time = NULL WHERE user_id = ?',
+                    (amount, user_id)
+                )
+                self.conn.commit()
+                self.add_transaction(user_id, 'UNSTAKE', amount, f'Unstaked {amount} tokens')
+                return True
+            return False
+        except Exception as e:
+            print(f"Error unstaking tokens: {e}")
+            return False
     
     def claim_rewards(self, user_id):
-        user = self.get_user(user_id)
-        if user and user[4] > 0 and user[5]:
-            try:
+        try:
+            user = self.get_user(user_id)
+            if user and user[4] > 0 and user[5]:
                 staked_time = datetime.fromisoformat(user[5])
                 time_diff = datetime.now() - staked_time
                 hours = time_diff.total_seconds() / 3600
@@ -110,39 +133,55 @@ class Database:
                     self.conn.commit()
                     self.add_transaction(user_id, 'REWARD', reward, f'Claimed {reward:.2f} tokens reward')
                     return reward
-            except:
-                pass
-        return 0
+            return 0
+        except Exception as e:
+            print(f"Error claiming rewards: {e}")
+            return 0
     
     def add_transaction(self, user_id, type, amount, description):
-        self.cursor.execute(
-            'INSERT INTO transactions (user_id, type, amount, timestamp, description) VALUES (?, ?, ?, ?, ?)',
-            (user_id, type, amount, datetime.now().isoformat(), description)
-        )
-        self.conn.commit()
+        try:
+            self.cursor.execute(
+                'INSERT INTO transactions (user_id, type, amount, timestamp, description) VALUES (?, ?, ?, ?, ?)',
+                (user_id, type, amount, datetime.now().isoformat(), description)
+            )
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error adding transaction: {e}")
     
     def get_transactions(self, user_id, limit=10):
-        self.cursor.execute(
-            'SELECT type, amount, timestamp, description FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?',
-            (user_id, limit)
-        )
-        return self.cursor.fetchall()
+        try:
+            self.cursor.execute(
+                'SELECT type, amount, timestamp, description FROM transactions WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?',
+                (user_id, limit)
+            )
+            return self.cursor.fetchall()
+        except Exception as e:
+            print(f"Error getting transactions: {e}")
+            return []
     
     def get_top_stakers(self, limit=5):
-        self.cursor.execute(
-            'SELECT user_id, staked_amount FROM users WHERE staked_amount > 0 ORDER BY staked_amount DESC LIMIT ?',
-            (limit,)
-        )
-        return self.cursor.fetchall()
+        try:
+            self.cursor.execute(
+                'SELECT user_id, staked_amount FROM users WHERE staked_amount > 0 ORDER BY staked_amount DESC LIMIT ?',
+                (limit,)
+            )
+            return self.cursor.fetchall()
+        except Exception as e:
+            print(f"Error getting top stakers: {e}")
+            return []
     
     def get_stats(self):
-        self.cursor.execute('SELECT COUNT(*) FROM users')
-        total_users = self.cursor.fetchone()[0]
-        
-        self.cursor.execute('SELECT SUM(staked_amount) FROM users')
-        total_staked = self.cursor.fetchone()[0] or 0
-        
-        self.cursor.execute('SELECT SUM(total_earned) FROM users')
-        total_rewards = self.cursor.fetchone()[0] or 0
-        
-        return total_users, total_staked, total_rewards
+        try:
+            self.cursor.execute('SELECT COUNT(*) FROM users')
+            total_users = self.cursor.fetchone()[0]
+            
+            self.cursor.execute('SELECT SUM(staked_amount) FROM users')
+            total_staked = self.cursor.fetchone()[0] or 0
+            
+            self.cursor.execute('SELECT SUM(total_earned) FROM users')
+            total_rewards = self.cursor.fetchone()[0] or 0
+            
+            return total_users, total_staked, total_rewards
+        except Exception as e:
+            print(f"Error getting stats: {e}")
+            return 0, 0, 0
