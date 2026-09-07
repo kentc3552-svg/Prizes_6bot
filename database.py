@@ -1,9 +1,12 @@
 import sqlite3
 from datetime import datetime, timedelta
+import os
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect('users.db', check_same_thread=False)
+        # Use a persistent database file
+        db_path = os.path.join(os.path.dirname(__file__), 'users.db')
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
         self.create_tables()
     
@@ -90,21 +93,25 @@ class Database:
     
     def claim_rewards(self, user_id):
         user = self.get_user(user_id)
-        if user and user[4] > 0:
-            staked_time = datetime.fromisoformat(user[5])
-            time_diff = datetime.now() - staked_time
-            hours = time_diff.total_seconds() / 3600
-            
-            # 5% reward per hour
-            reward = user[4] * 0.05 * hours
-            
-            self.cursor.execute(
-                'UPDATE users SET balance = balance + ?, total_earned = total_earned + ?, last_reward_claim = ? WHERE user_id = ?',
-                (reward, reward, datetime.now().isoformat(), user_id)
-            )
-            self.conn.commit()
-            self.add_transaction(user_id, 'REWARD', reward, f'Claimed {reward} tokens reward')
-            return reward
+        if user and user[4] > 0 and user[5]:
+            try:
+                staked_time = datetime.fromisoformat(user[5])
+                time_diff = datetime.now() - staked_time
+                hours = time_diff.total_seconds() / 3600
+                
+                # 5% reward per hour
+                reward = user[4] * 0.05 * hours
+                
+                if reward > 0:
+                    self.cursor.execute(
+                        'UPDATE users SET balance = balance + ?, total_earned = total_earned + ?, last_reward_claim = ? WHERE user_id = ?',
+                        (reward, reward, datetime.now().isoformat(), user_id)
+                    )
+                    self.conn.commit()
+                    self.add_transaction(user_id, 'REWARD', reward, f'Claimed {reward:.2f} tokens reward')
+                    return reward
+            except:
+                pass
         return 0
     
     def add_transaction(self, user_id, type, amount, description):
