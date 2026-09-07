@@ -5,7 +5,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from database import Database
 from datetime import datetime
-import json
 
 # Load environment variables
 load_dotenv()
@@ -23,8 +22,8 @@ db = Database()
 # Bot token
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# Constants
-REWARD_RATE = 0.05  # 5% per hour
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable not set!")
 
 # Helper function to create main menu keyboard
 def get_main_keyboard():
@@ -121,28 +120,35 @@ async def stake_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     query = update.callback_query
     await query.answer()
     
-    amount = int(query.data.split('_')[1])
-    user_id = query.from_user.id
-    user = db.get_user(user_id)
-    
-    if not user or user[3] < amount:
+    try:
+        amount = float(query.data.split('_')[1])
+        user_id = query.from_user.id
+        user = db.get_user(user_id)
+        
+        if not user or user[3] < amount:
+            await query.edit_message_text(
+                f"❌ Insufficient balance! You have {user[3] if user else 0:.2f} tokens available.",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        if db.stake_tokens(user_id, amount):
+            updated_user = db.get_user(user_id)
+            await query.edit_message_text(
+                f"✅ Successfully staked {amount:.2f} tokens!\n\n"
+                f"💵 New Balance: {updated_user[3]:.2f} tokens\n"
+                f"🔒 Total Staked: {updated_user[4]:.2f} tokens\n\n"
+                f"🎁 You'll earn 5% rewards per hour!",
+                reply_markup=get_main_keyboard()
+            )
+        else:
+            await query.edit_message_text(
+                "❌ Failed to stake tokens. Please try again.",
+                reply_markup=get_main_keyboard()
+            )
+    except Exception as e:
         await query.edit_message_text(
-            f"❌ Insufficient balance! You have {user[3] if user else 0:.2f} tokens available.",
-            reply_markup=get_main_keyboard()
-        )
-        return
-    
-    if db.stake_tokens(user_id, amount):
-        await query.edit_message_text(
-            f"✅ Successfully staked {amount} tokens!\n\n"
-            f"💵 New Balance: {user[3] - amount:.2f} tokens\n"
-            f"🔒 Total Staked: {user[4] + amount:.2f} tokens\n\n"
-            f"🎁 You'll earn 5% rewards per hour!",
-            reply_markup=get_main_keyboard()
-        )
-    else:
-        await query.edit_message_text(
-            "❌ Failed to stake tokens. Please try again.",
+            f"❌ Error: {str(e)}",
             reply_markup=get_main_keyboard()
         )
 
@@ -179,10 +185,11 @@ async def handle_stake_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
         
         if db.stake_tokens(user_id, amount):
+            updated_user = db.get_user(user_id)
             await update.message.reply_text(
                 f"✅ Successfully staked {amount:.2f} tokens!\n\n"
-                f"💵 New Balance: {user[3] - amount:.2f} tokens\n"
-                f"🔒 Total Staked: {user[4] + amount:.2f} tokens",
+                f"💵 New Balance: {updated_user[3]:.2f} tokens\n"
+                f"🔒 Total Staked: {updated_user[4]:.2f} tokens",
                 reply_markup=get_main_keyboard()
             )
         else:
@@ -208,9 +215,10 @@ async def unstake(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     
     if db.unstake_tokens(user_id):
+        updated_user = db.get_user(user_id)
         await query.edit_message_text(
             f"✅ Successfully unstaked all tokens!\n\n"
-            f"💵 New Balance: {user[3] + user[4]:.2f} tokens\n"
+            f"💵 New Balance: {updated_user[3]:.2f} tokens\n"
             f"🔒 Staked: 0 tokens",
             reply_markup=get_main_keyboard()
         )
@@ -402,38 +410,39 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 def main() -> None:
     """Start the bot."""
-    # Create the Application
-    application = Application.builder().token(BOT_TOKEN).build()
+    try:
+        # Create the Application
+        application = Application.builder().token(BOT_TOKEN).build()
 
-    # Register command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("balance", balance))
-    application.add_handler(CommandHandler("stake", stake_menu))
-    application.add_handler(CommandHandler("claim", claim_rewards))
-    application.add_handler(CommandHandler("help", help_command))
-    
-    # Register callback query handlers
-    application.add_handler(CallbackQueryHandler(balance, pattern='balance'))
-    application.add_handler(CallbackQueryHandler(stake_menu, pattern='stake'))
-    application.add_handler(CallbackQueryHandler(stake_amount, pattern='stake_\\d+'))
-    application.add_handler(CallbackQueryHandler(stake_custom, pattern='stake_custom'))
-    application.add_handler(CallbackQueryHandler(unstake, pattern='unstake'))
-    application.add_handler(CallbackQueryHandler(claim_rewards, pattern='claim'))
-    application.add_handler(CallbackQueryHandler(stats, pattern='stats'))
-    application.add_handler(CallbackQueryHandler(history, pattern='history'))
-    application.add_handler(CallbackQueryHandler(leaderboard, pattern='leaderboard'))
-    application.add_handler(CallbackQueryHandler(help_command, pattern='help'))
-    application.add_handler(CallbackQueryHandler(back_to_main, pattern='back_to_main'))
-    
-    # Register text message handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
-    # Register error handler
-    application.add_error_handler(error_handler)
+        # Register command handlers
+        application.add_handler(CommandHandler("start", start))
+        
+        # Register callback query handlers
+        application.add_handler(CallbackQueryHandler(balance, pattern='balance'))
+        application.add_handler(CallbackQueryHandler(stake_menu, pattern='stake'))
+        application.add_handler(CallbackQueryHandler(stake_amount, pattern='stake_\\d+'))
+        application.add_handler(CallbackQueryHandler(stake_custom, pattern='stake_custom'))
+        application.add_handler(CallbackQueryHandler(unstake, pattern='unstake'))
+        application.add_handler(CallbackQueryHandler(claim_rewards, pattern='claim'))
+        application.add_handler(CallbackQueryHandler(stats, pattern='stats'))
+        application.add_handler(CallbackQueryHandler(history, pattern='history'))
+        application.add_handler(CallbackQueryHandler(leaderboard, pattern='leaderboard'))
+        application.add_handler(CallbackQueryHandler(help_command, pattern='help'))
+        application.add_handler(CallbackQueryHandler(back_to_main, pattern='back_to_main'))
+        
+        # Register text message handler
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+        
+        # Register error handler
+        application.add_error_handler(error_handler)
 
-    # Start the Bot
-    print("🤖 Bot is starting...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # Start the Bot
+        print("🤖 Prizes_6bot is starting...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        print(f"❌ Failed to start bot: {e}")
+        raise
 
 if __name__ == '__main__':
     main()
