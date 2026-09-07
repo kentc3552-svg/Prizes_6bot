@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from database import Database
-from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -23,7 +22,8 @@ db = Database()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN environment variable not set!")
+    print("❌ BOT_TOKEN not set! Please set it in Railway environment variables.")
+    exit(1)
 
 # Helper function to create main menu keyboard
 def get_main_keyboard():
@@ -60,6 +60,7 @@ Use the buttons below to get started:
 ✅ Earn 5% rewards per hour on staked tokens
 ✅ Secure and transparent
 ✅ Instant withdrawals
+✅ Welcome bonus: 100 tokens!
 """
     
     await update.message.reply_text(
@@ -438,6 +439,7 @@ def main() -> None:
 
         # Start the Bot
         print("🤖 Prizes_6bot is starting...")
+        print(f"✅ Bot is running! @Prizes_6bot")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
         
     except Exception as e:
